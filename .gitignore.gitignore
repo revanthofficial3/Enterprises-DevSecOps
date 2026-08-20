@@ -1,0 +1,13 @@
+target/
+.idea/
+.vscode/
+*.log
+*.class
+*.war
+*.jar
+
+# Terraform
+.terraform/
+terraform.tfstate
+terraform.tfstate.*
+*.tfplan
