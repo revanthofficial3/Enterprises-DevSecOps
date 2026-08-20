@@ -1,0 +1,521 @@
+NEXUS REPOSITORY MANAGER SETUP AND CONFIGURATION
+=================================================
+
+Purpose
+-------
+Nexus Repository Manager is used as the artifact repository for the Maven
+application.
+
+Project flow:
+
+    Maven Build
+        |
+        v
+    SonarQube
+        |
+        v
+    Quality Gate
+        |
+        v
+    Maven Deploy
+        |
+        v
+    Nexus maven-releases
+        |
+        v
+    enterprise-devsecops-1.0.0.war
+
+
+1. SERVER REQUIREMENTS
+----------------------
+
+Recommended:
+
+    Ubuntu Linux
+    Java runtime compatible with the selected Nexus version
+    Adequate RAM
+    Adequate disk
+    Network connectivity
+
+
+2. INSTALL JAVA
+---------------
+
+Check Java:
+
+    java -version
+
+If Java is not installed:
+
+    sudo apt update
+
+    sudo apt install -y openjdk-17-jdk
+
+Verify:
+
+    java -version
+
+Use the Java version required by the Nexus release selected for the project.
+
+
+3. CREATE NEXUS USER
+--------------------
+
+Create a dedicated service user:
+
+    sudo useradd -r -m -U -d /opt/nexus -s /bin/bash nexus
+
+
+4. DOWNLOAD NEXUS
+-----------------
+
+Download the Nexus Repository Manager archive from the official Sonatype
+distribution source.
+
+Example process:
+
+    cd /tmp
+
+    wget <NEXUS-DOWNLOAD-URL>
+
+The exact download URL and version should be taken from the official Nexus
+release available when installing the project.
+
+
+5. EXTRACT NEXUS
+----------------
+
+Example:
+
+    sudo tar -xzf nexus-<VERSION>-unix.tar.gz -C /opt/
+
+Rename if required:
+
+    sudo mv /opt/nexus-<VERSION> /opt/nexus
+
+
+6. CREATE NEXUS DATA DIRECTORY
+------------------------------
+
+    sudo mkdir -p /opt/sonatype-work
+
+Set ownership:
+
+    sudo chown -R nexus:nexus /opt/nexus
+    sudo chown -R nexus:nexus /opt/sonatype-work
+
+
+7. CONFIGURE NEXUS DATA DIRECTORY
+----------------------------------
+
+Edit:
+
+    sudo nano /opt/nexus/bin/nexus.vmoptions
+
+Configure the Nexus data directory as required by the installed version.
+
+Follow the configuration syntax provided by the installed Nexus release.
+
+
+8. CONFIGURE NEXUS USER
+-----------------------
+
+Edit:
+
+    sudo nano /opt/nexus/bin/nexus.rc
+
+Set:
+
+    run_as_user="nexus"
+
+
+9. START NEXUS
+--------------
+
+    sudo -u nexus /opt/nexus/bin/nexus start
+
+Check status:
+
+    sudo -u nexus /opt/nexus/bin/nexus status
+
+
+10. CHECK NEXUS LOGS
+--------------------
+
+    tail -f /opt/sonatype-work/nexus3/log/nexus.log
+
+Use the actual data directory configured for the installation.
+
+
+11. ACCESS NEXUS
+----------------
+
+Default Nexus web port:
+
+    8081
+
+Open:
+
+    http://<NEXUS-SERVER-PUBLIC-IP>:8081
+
+
+12. INITIAL ADMIN PASSWORD
+--------------------------
+
+For an initial installation, Nexus stores the initial administrator password
+in its data directory.
+
+Common location:
+
+    /opt/sonatype-work/nexus3/admin.password
+
+Read it:
+
+    sudo cat /opt/sonatype-work/nexus3/admin.password
+
+Use the password to log in as:
+
+    admin
+
+Change the password after first login.
+
+Do not commit this file or its contents to GitHub.
+
+
+13. CREATE MAVEN RELEASE REPOSITORY
+-----------------------------------
+
+In Nexus:
+
+    Settings
+        ->
+    Repository
+        ->
+    Repositories
+        ->
+    Create repository
+
+Select:
+
+    maven2 (hosted)
+
+Repository name:
+
+    maven-releases
+
+Version policy:
+
+    Release
+
+Deployment policy:
+
+    Allow redeploy
+    or
+    Disable redeploy
+
+Choose the policy appropriate for the project.
+
+
+14. PROJECT NEXUS REPOSITORY
+----------------------------
+
+The project uses:
+
+    maven-releases
+
+Artifact coordinates:
+
+    Group ID:
+    com.enterprise
+
+    Artifact ID:
+    enterprise-devsecops
+
+    Version:
+    1.0.0
+
+Packaging:
+
+    war
+
+
+15. MAVEN DISTRIBUTION MANAGEMENT
+----------------------------------
+
+The project's pom.xml contains:
+
+    <distributionManagement>
+        <repository>
+            <id>nexus</id>
+            <name>Nexus Releases</name>
+            <url>http://<NEXUS-SERVER-IP>:8081/repository/maven-releases/</url>
+        </repository>
+    </distributionManagement>
+
+The repository URL should point to the actual Nexus server address.
+
+
+16. MAVEN SETTINGS.XML
+----------------------
+
+Maven needs credentials to deploy to Nexus.
+
+Configure a server entry in Maven settings.xml:
+
+    <servers>
+        <server>
+            <id>nexus</id>
+            <username>${env.NEXUS_USERNAME}</username>
+            <password>${env.NEXUS_PASSWORD}</password>
+        </server>
+    </servers>
+
+The server ID must match:
+
+    <id>nexus</id>
+
+The project previously required correcting a server ID mismatch. Keeping the
+same ID in pom.xml and settings.xml is essential.
+
+
+17. JENKINS NEXUS CREDENTIALS
+-----------------------------
+
+Store Nexus credentials in Jenkins Credentials Manager.
+
+Example credential ID:
+
+    nexus-creds
+
+Do not put the Nexus username or password directly in Jenkinsfile.
+
+
+18. JENKINS CONFIG FILE PROVIDER
+--------------------------------
+
+The Jenkins pipeline uses a managed Maven settings file.
+
+Example:
+
+    configFileProvider([
+        configFile(
+            fileId: 'maven-settings',
+            variable: 'MAVEN_SETTINGS'
+        )
+    ]) {
+        ...
+    }
+
+The pipeline then executes:
+
+    mvn clean deploy -s $MAVEN_SETTINGS
+
+
+19. JENKINS NEXUS DEPLOYMENT
+----------------------------
+
+The pipeline uses:
+
+    withCredentials([
+        usernamePassword(
+            credentialsId: 'nexus-creds',
+            usernameVariable: 'NEXUS_USERNAME',
+            passwordVariable: 'NEXUS_PASSWORD'
+        )
+    ]) {
+        sh '''
+        mvn clean deploy \
+        -s $MAVEN_SETTINGS
+        '''
+    }
+
+
+20. BUILD AND DEPLOY MANUALLY
+-----------------------------
+
+From the project root:
+
+    mvn clean package
+
+Then deploy:
+
+    mvn clean deploy -s /path/to/settings.xml
+
+
+21. VERIFY NEXUS ARTIFACT
+-------------------------
+
+Open:
+
+    http://<NEXUS-SERVER-PUBLIC-IP>:8081
+
+Navigate:
+
+    Browse
+        ->
+    maven-releases
+        ->
+    com
+        ->
+    enterprise
+        ->
+    enterprise-devsecops
+        ->
+    1.0.0
+
+
+22. EXPECTED ARTIFACTS
+----------------------
+
+The project produces:
+
+    enterprise-devsecops-1.0.0.pom
+    enterprise-devsecops-1.0.0.war
+    enterprise-devsecops-1.0.0.pom.md5
+    enterprise-devsecops-1.0.0.pom.sha1
+    enterprise-devsecops-1.0.0.war.md5
+    enterprise-devsecops-1.0.0.war.sha1
+
+
+23. CHECK NEXUS SERVICE
+-----------------------
+
+If running through the Nexus script:
+
+    sudo -u nexus /opt/nexus/bin/nexus status
+
+Check port:
+
+    sudo ss -lntp | grep 8081
+
+
+24. CHECK NEXUS LOGS
+--------------------
+
+    tail -f /opt/sonatype-work/nexus3/log/nexus.log
+
+
+25. RESTART NEXUS
+-----------------
+
+    sudo -u nexus /opt/nexus/bin/nexus restart
+
+Check:
+
+    sudo -u nexus /opt/nexus/bin/nexus status
+
+
+26. STOP NEXUS
+--------------
+
+    sudo -u nexus /opt/nexus/bin/nexus stop
+
+
+27. START NEXUS
+---------------
+
+    sudo -u nexus /opt/nexus/bin/nexus start
+
+
+28. NEXUS TROUBLESHOOTING
+-------------------------
+
+Check Nexus status:
+
+    sudo -u nexus /opt/nexus/bin/nexus status
+
+Check logs:
+
+    tail -f /opt/sonatype-work/nexus3/log/nexus.log
+
+Check port:
+
+    sudo ss -lntp | grep 8081
+
+Test local access:
+
+    curl http://localhost:8081
+
+Check Maven settings:
+
+    cat ~/.m2/settings.xml
+
+Check that the server ID is:
+
+    nexus
+
+Check the distributionManagement repository ID in pom.xml:
+
+    nexus
+
+
+29. COMMON 401 UNAUTHORIZED ISSUE
+---------------------------------
+
+If Maven returns:
+
+    401 Unauthorized
+
+Check:
+
+    1. Nexus username
+    2. Nexus password
+    3. Jenkins credential
+    4. settings.xml
+    5. distributionManagement ID
+    6. repository URL
+
+The server ID in settings.xml must match the repository ID in pom.xml.
+
+Example:
+
+    pom.xml:
+    <id>nexus</id>
+
+    settings.xml:
+    <server>
+        <id>nexus</id>
+    </server>
+
+
+30. AWS SECURITY GROUP
+----------------------
+
+If Nexus is accessed remotely, allow:
+
+    TCP 8081
+
+Prefer restricting the source IP to trusted users/servers.
+
+
+31. SECURITY
+------------
+
+Never commit:
+
+    admin.password
+    Nexus username/password
+    Maven settings containing real credentials
+    Jenkins credentials
+    private keys
+    tokens
+    .env files
+
+Use Jenkins Credentials Manager and protected configuration files.
+
+
+32. PROJECT RESULT
+------------------
+
+Nexus successfully stores the Enterprise DevSecOps Maven release artifact.
+
+The project artifact:
+
+    enterprise-devsecops-1.0.0.war
+
+is uploaded to:
+
+    maven-releases
+
+through the Jenkins CI/CD pipeline after successful Maven build and SonarQube
+Quality Gate validation.

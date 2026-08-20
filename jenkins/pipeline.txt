@@ -1,0 +1,334 @@
+JENKINS PIPELINE / JENKINSFILE
+==============================
+
+Purpose
+-------
+This document explains the Jenkins Declarative Pipeline used by the project.
+
+Pipeline:
+
+GitHub
+  -> Checkout
+  -> Maven Build
+  -> SonarQube Analysis
+  -> Quality Gate
+  -> Nexus
+  -> Docker Build
+  -> Docker Login
+  -> Docker Tag
+  -> Docker Push
+  -> Kubernetes Deployment
+
+1. FILE LOCATION
+----------------
+The pipeline is stored in the project root:
+
+    enterprise-devsecops/
+    +-- Jenkinsfile
+
+2. JENKINS TOOLS REQUIRED
+-------------------------
+Configure in Manage Jenkins -> Tools:
+
+    JDK name: JDK21
+    Maven name: Maven
+
+These names must exactly match the Jenkinsfile.
+
+3. COMPLETE JENKINSFILE
+-----------------------
+    pipeline {
+        agent any
+
+        tools {
+            jdk 'JDK21'
+            maven 'Maven'
+        }
+
+        stages {
+
+            stage('Checkout') {
+                steps {
+                    git branch: 'main',
+                        url: 'https://github.com/revanthofficial3/enterprise-devsecops.git'
+                }
+            }
+
+            stage('Build') {
+                steps {
+                    sh 'mvn clean package'
+                }
+            }
+
+            stage('SonarQube Analysis') {
+                steps {
+                    withSonarQubeEnv('SonarQube') {
+                        sh '''
+                        mvn clean verify org.sonarsource.scanner.maven:sonar-maven-plugin:sonar                         -Dsonar.projectKey=enterprise-devsecops                         -Dsonar.projectName="Enterprise DevSecOps"
+                        '''
+                    }
+                }
+            }
+
+            stage('Quality Gate') {
+                steps {
+                    timeout(time: 5, unit: 'MINUTES') {
+                        waitForQualityGate abortPipeline: true
+                    }
+                }
+            }
+
+            stage('Deploy to Nexus') {
+                steps {
+                    configFileProvider([
+                        configFile(
+                            fileId: 'maven-settings',
+                            variable: 'MAVEN_SETTINGS'
+                        )
+                    ]) {
+                        withCredentials([
+                            usernamePassword(
+                                credentialsId: 'nexus-creds',
+                                usernameVariable: 'NEXUS_USERNAME',
+                                passwordVariable: 'NEXUS_PASSWORD'
+                            )
+                        ]) {
+                            sh '''
+                            mvn clean deploy                             -s $MAVEN_SETTINGS
+                            '''
+                        }
+                    }
+                }
+            }
+
+            stage('Docker Build') {
+                steps {
+                    sh 'docker build -t enterprise-devsecops:${BUILD_NUMBER} .'
+                }
+            }
+
+            stage('Docker Login') {
+                steps {
+                    withCredentials([usernamePassword(
+                        credentialsId: 'jenkins-devsecops',
+                        usernameVariable: 'DOCKER_USER',
+                        passwordVariable: 'DOCKER_PASS'
+                    )]) {
+                        sh 'echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin'
+                    }
+                }
+            }
+
+            stage('Docker Tag') {
+                steps {
+                    sh 'docker tag enterprise-devsecops:${BUILD_NUMBER} revanth76/enterprise-devsecops:${BUILD_NUMBER}'
+                }
+            }
+
+            stage('Docker Push') {
+                steps {
+                    sh 'docker push revanth76/enterprise-devsecops:${BUILD_NUMBER}'
+                }
+            }
+
+            stage('Deploy to Kubernetes') {
+                steps {
+                    sh '''
+                    kubectl set image deployment/enterprise-devsecops                     enterprise-devsecops=revanth76/enterprise-devsecops:${BUILD_NUMBER}
+                    '''
+                }
+            }
+        }
+
+        post {
+            success {
+                echo 'Pipeline executed successfully.'
+            }
+
+            failure {
+                echo 'Pipeline execution failed.'
+            }
+
+            always {
+                cleanWs()
+            }
+        }
+    }
+
+4. CHECKOUT
+-----------
+    git branch: 'main',
+        url: 'https://github.com/revanthofficial3/enterprise-devsecops.git'
+
+5. BUILD
+--------
+    mvn clean package
+
+Creates:
+
+    target/enterprise-devsecops.war
+
+6. SONARQUBE ANALYSIS
+---------------------
+    mvn clean verify org.sonarsource.scanner.maven:sonar-maven-plugin:sonar       -Dsonar.projectKey=enterprise-devsecops       -Dsonar.projectName="Enterprise DevSecOps"
+
+Jenkins SonarQube server name:
+
+    SonarQube
+
+7. QUALITY GATE
+---------------
+    timeout(time: 5, unit: 'MINUTES') {
+        waitForQualityGate abortPipeline: true
+    }
+
+PASSED -> pipeline continues.
+FAILED -> pipeline aborts.
+
+8. NEXUS DEPLOYMENT
+-------------------
+Required:
+
+    Credential ID: nexus-creds
+    Managed file ID: maven-settings
+
+Command:
+
+    mvn clean deploy -s $MAVEN_SETTINGS
+
+Repository ID in pom.xml and settings.xml:
+
+    nexus
+
+9. DOCKER BUILD
+---------------
+    docker build -t enterprise-devsecops:${BUILD_NUMBER} .
+
+10. DOCKER LOGIN
+----------------
+Credential ID:
+
+    jenkins-devsecops
+
+Command:
+
+    echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin
+
+11. DOCKER TAG
+--------------
+    docker tag enterprise-devsecops:${BUILD_NUMBER}       revanth76/enterprise-devsecops:${BUILD_NUMBER}
+
+12. DOCKER PUSH
+---------------
+    docker push revanth76/enterprise-devsecops:${BUILD_NUMBER}
+
+13. KUBERNETES DEPLOYMENT
+-------------------------
+    kubectl set image deployment/enterprise-devsecops       enterprise-devsecops=revanth76/enterprise-devsecops:${BUILD_NUMBER}
+
+14. VERIFY KUBERNETES
+---------------------
+    kubectl get deployment enterprise-devsecops
+    kubectl get pods -o wide
+    kubectl get svc enterprise-devsecops-service
+
+15. VERIFY APPLICATION
+----------------------
+Project Service:
+
+    NodePort: 30080
+
+Open:
+
+    http://<KUBERNETES-NODE-PUBLIC-IP>:30080
+
+Expected:
+
+    Enterprise DevSecOps Platform
+    Application Deployed Successfully
+    CI/CD Pipeline Working Successfully.
+
+16. POST ACTIONS
+----------------
+Success:
+
+    echo 'Pipeline executed successfully.'
+
+Failure:
+
+    echo 'Pipeline execution failed.'
+
+Always:
+
+    cleanWs()
+
+17. REQUIRED CREDENTIALS / FILES
+--------------------------------
+    nexus-creds
+        Nexus username/password
+
+    jenkins-devsecops
+        DockerHub username/access token
+
+    maven-settings
+        Managed Maven settings.xml
+
+    SonarQube
+        Jenkins SonarQube server configuration
+
+18. REQUIRED COMMANDS
+---------------------
+    git --version
+    java -version
+    mvn -version
+    docker --version
+    kubectl version --client
+
+Check Kubernetes:
+
+    kubectl get nodes
+
+Check Docker:
+
+    docker ps
+
+19. COMMON ERRORS
+-----------------
+Maven tool not found:
+Configure exact tool name:
+
+    Maven
+
+JDK tool not found:
+Configure exact tool name:
+
+    JDK21
+
+SonarQube Quality Gate timeout:
+Check SonarQube URL, Jenkins configuration and webhook.
+
+Nexus 401:
+Check nexus-creds, maven-settings, repository URL and matching server ID.
+
+Docker permission denied:
+    sudo systemctl status docker
+    sudo -u jenkins docker ps
+
+Kubernetes unauthorized:
+    kubectl get nodes
+
+Verify the kubeconfig available to the Jenkins execution environment.
+
+20. SECURITY
+------------
+Never put passwords, API tokens, AWS credentials, DockerHub tokens, Nexus
+passwords, SonarQube tokens or private keys directly in Jenkinsfile.
+
+Use Jenkins Credentials Manager and Managed Files.
+
+21. FINAL RESULT
+----------------
+GitHub -> Maven -> SonarQube -> Quality Gate -> Nexus -> Docker -> DockerHub
+-> Kubernetes.
+
+The Jenkinsfile automates the complete Enterprise DevSecOps CI/CD workflow.

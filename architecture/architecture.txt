@@ -1,0 +1,53 @@
+enterprise-devsecops/
+¦
++-- terraform/
+¦   +-- main.tf
+¦   +-- outputs.tf
+¦   +-- terraform.txt
+¦
++-- ansible/
+¦   +-- ansible.cfg
+¦   +-- inventory
+¦   +-- ansible.txt
+¦   +-- playbooks/
+¦       +-- common.yml
+¦       +-- docker.yml
+¦       +-- kubernetes.yml
+¦
++-- jenkins/
+¦   +-- jenkins.txt
+¦   +-- pipeline.txt
+¦
++-- docker/
+¦   +-- Dockerfile
+¦   +-- docker.txt
+¦
++-- k8s/
+¦   +-- k8s-master.txt
+¦   +-- k8s-worker.txt
+¦   +-- deployment.yaml
+¦   +-- service.yaml
+¦
++-- monitoring/
+¦   +-- prometheus/
+¦   ¦   +-- prometheus.txt
+¦   +-- grafana/
+¦   ¦   +-- grafana.txt
+¦   +-- alertmanager/
+¦       +-- alertmanager.txt
+¦
++-- helm/
+¦   +-- helm.txt
+¦
++-- dockerhub/
+¦   +-- dockerhub.txt
+¦
++-- sonarqube/
+¦   +-- sonarqube.txt
+¦
++-- nexus/
+¦   +-- nexus.txt
+¦
++-- pom.xml
++-- .gitignore
++-- README.md

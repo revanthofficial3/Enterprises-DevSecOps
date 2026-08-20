@@ -1,0 +1,264 @@
+DOCKERHUB SETUP AND CONFIGURATION
+===================================
+
+Purpose
+-------
+DockerHub is used as the public container image registry for the Enterprise
+DevSecOps application.
+
+Project repository:
+
+    revanth76/enterprise-devsecops
+
+Workflow:
+
+    Jenkins
+       |
+       v
+    Docker Build
+       |
+       v
+    Docker Tag
+       |
+       v
+    Docker Login
+       |
+       v
+    Docker Push
+       |
+       v
+    DockerHub
+       |
+       v
+    Kubernetes
+
+
+1. CREATE A DOCKERHUB ACCOUNT
+-----------------------------
+
+Open:
+
+    https://hub.docker.com/
+
+Create or use an existing DockerHub account.
+
+
+2. CREATE A REPOSITORY
+----------------------
+
+From DockerHub:
+
+    Repositories
+        ->
+    Create Repository
+
+Repository name:
+
+    enterprise-devsecops
+
+Example full repository:
+
+    revanth76/enterprise-devsecops
+
+
+3. CHECK DOCKER INSTALLATION
+----------------------------
+
+On the DevSecOps server:
+
+    docker --version
+
+    docker info
+
+
+4. LOGIN TO DOCKERHUB
+---------------------
+
+Interactive login:
+
+    docker login
+
+Enter the DockerHub username and password/token when prompted.
+
+
+5. USE A DOCKER ACCESS TOKEN
+----------------------------
+
+For automation, use a DockerHub access token instead of a normal password.
+
+Store the token in Jenkins Credentials Manager.
+
+Do not put the token in:
+
+    Jenkinsfile
+    README.md
+    shell scripts
+    GitHub repository
+
+
+6. BUILD THE PROJECT IMAGE
+--------------------------
+
+From the project root:
+
+    docker build -t enterprise-devsecops:1.0.0 .
+
+
+7. TAG THE IMAGE
+----------------
+
+    docker tag enterprise-devsecops:1.0.0 \
+      revanth76/enterprise-devsecops:1.0.0
+
+
+8. PUSH THE IMAGE
+-----------------
+
+    docker push revanth76/enterprise-devsecops:1.0.0
+
+
+9. VERIFY IMAGE
+---------------
+
+Open DockerHub and navigate to:
+
+    revanth76/enterprise-devsecops
+
+The tag should appear in the repository.
+
+
+10. DYNAMIC BUILD TAGS
+----------------------
+
+The Jenkins pipeline uses the Jenkins build number.
+
+Example:
+
+    revanth76/enterprise-devsecops:${BUILD_NUMBER}
+
+If the Jenkins build number is 27:
+
+    revanth76/enterprise-devsecops:27
+
+
+11. JENKINS DOCKERHUB LOGIN
+---------------------------
+
+The Jenkins pipeline uses a Jenkins credential.
+
+Conceptual pipeline:
+
+    withCredentials([usernamePassword(
+        credentialsId: 'jenkins-devsecops',
+        usernameVariable: 'DOCKER_USER',
+        passwordVariable: 'DOCKER_PASS'
+    )]) {
+        sh 'echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin'
+    }
+
+This keeps DockerHub credentials outside the source code.
+
+
+12. JENKINS DOCKER PUSH
+-----------------------
+
+The pipeline pushes:
+
+    docker push revanth76/enterprise-devsecops:${BUILD_NUMBER}
+
+
+13. VERIFY FROM DOCKER CLI
+--------------------------
+
+List images:
+
+    docker images
+
+Inspect image:
+
+    docker inspect revanth76/enterprise-devsecops:1.0.0
+
+
+14. PULL IMAGE
+--------------
+
+From a machine that has Docker installed:
+
+    docker pull revanth76/enterprise-devsecops:1.0.0
+
+Verify:
+
+    docker images
+
+
+15. RUN PULLED IMAGE
+--------------------
+
+    docker run -d \
+      --name enterprise-devsecops-test \
+      -p 8080:8080 \
+      revanth76/enterprise-devsecops:1.0.0
+
+Check:
+
+    docker ps
+
+Logs:
+
+    docker logs enterprise-devsecops-test
+
+
+16. REMOVE TEST CONTAINER
+-------------------------
+
+    docker stop enterprise-devsecops-test
+
+    docker rm enterprise-devsecops-test
+
+
+17. KUBERNETES USE
+------------------
+
+Kubernetes uses the DockerHub image in the Deployment.
+
+Example:
+
+    image: revanth76/enterprise-devsecops:1.0.0
+
+The Jenkins pipeline updates the Deployment dynamically:
+
+    kubectl set image deployment/enterprise-devsecops \
+      enterprise-devsecops=revanth76/enterprise-devsecops:${BUILD_NUMBER}
+
+
+18. CHECK DOCKERHUB TAGS
+-----------------------
+
+Use DockerHub web interface to verify:
+
+    1.0.0
+    27
+    <other build numbers>
+
+
+19. SECURITY
+------------
+
+Never commit:
+
+    DockerHub password
+    DockerHub access token
+    Jenkins credentials
+
+Use:
+
+    Jenkins Credentials Manager
+    DockerHub Access Tokens
+
+
+20. PROJECT RESULT
+------------------
+
+DockerHub successfully stores the versioned Enterprise DevSecOps container
+images produced by Jenkins. Kubernetes can pull the published image and deploy
+it as application Pods.

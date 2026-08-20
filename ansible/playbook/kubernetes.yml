@@ -1,0 +1,71 @@
+---
+- name: Verify Kubernetes master
+  hosts: kubernetes_master
+  become: true
+  gather_facts: true
+
+  tasks:
+
+    - name: Check kubelet service
+      ansible.builtin.systemd:
+        name: kubelet
+      register: kubelet_master
+
+    - name: Display master kubelet status
+      ansible.builtin.debug:
+        msg: "Master kubelet state: {{ kubelet_master.status.ActiveState }}"
+
+    - name: Check kubeadm version
+      ansible.builtin.command: kubeadm version -o short
+      register: kubeadm_master_version
+      changed_when: false
+
+    - name: Display kubeadm version
+      ansible.builtin.debug:
+        var: kubeadm_master_version.stdout
+
+    - name: Check kubectl cluster nodes
+      ansible.builtin.command: kubectl get nodes -o wide
+      register: cluster_nodes
+      changed_when: false
+      environment:
+        KUBECONFIG: /etc/kubernetes/admin.conf
+
+    - name: Display Kubernetes nodes
+      ansible.builtin.debug:
+        var: cluster_nodes.stdout
+
+
+- name: Verify Kubernetes worker
+  hosts: kubernetes_workers
+  become: true
+  gather_facts: true
+
+  tasks:
+
+    - name: Check kubelet service
+      ansible.builtin.systemd:
+        name: kubelet
+      register: kubelet_worker
+
+    - name: Display worker kubelet status
+      ansible.builtin.debug:
+        msg: "Worker kubelet state: {{ kubelet_worker.status.ActiveState }}"
+
+    - name: Check kubeadm version
+      ansible.builtin.command: kubeadm version -o short
+      register: kubeadm_worker_version
+      changed_when: false
+
+    - name: Display kubeadm version
+      ansible.builtin.debug:
+        var: kubeadm_worker_version.stdout
+
+    - name: Check kubelet version
+      ansible.builtin.command: kubelet --version
+      register: kubelet_worker_version
+      changed_when: false
+
+    - name: Display kubelet version
+      ansible.builtin.debug:
+        var: kubelet_worker_version.stdout

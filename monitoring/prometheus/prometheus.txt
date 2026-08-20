@@ -1,0 +1,340 @@
+PROMETHEUS SETUP AND CONFIGURATION
+=================================
+
+Purpose
+-------
+Prometheus is used to collect and store time-series metrics from the Kubernetes
+cluster and monitoring components. In this project, Prometheus is deployed in
+the "monitoring" namespace using the Prometheus Community Helm chart.
+
+Architecture
+------------
+Kubernetes Cluster
+       |
+       +--> kube-state-metrics
+       |
+       +--> Node Exporter
+       |
+       +--> ServiceMonitor targets
+       |
+       v
+   Prometheus
+       |
+       +--> PromQL queries
+       |
+       +--> Alert rules
+       |
+       v
+   Alertmanager
+
+
+1. CHECK PREREQUISITES
+----------------------
+
+Check Kubernetes nodes:
+
+    kubectl get nodes
+
+Expected:
+
+    k8s-master     Ready
+    k8s-worker1    Ready
+
+Check Helm:
+
+    helm version
+
+
+2. CREATE MONITORING NAMESPACE
+------------------------------
+
+    kubectl create namespace monitoring
+
+If the namespace already exists:
+
+    kubectl get namespace monitoring
+
+
+3. ADD PROMETHEUS COMMUNITY HELM REPOSITORY
+-------------------------------------------
+
+    helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+
+Update Helm repositories:
+
+    helm repo update
+
+Verify:
+
+    helm search repo prometheus-community/kube-prometheus-stack
+
+
+4. INSTALL PROMETHEUS STACK
+---------------------------
+
+The kube-prometheus-stack chart installs Prometheus together with the
+Kubernetes monitoring components used by this project.
+
+    helm install monitoring prometheus-community/kube-prometheus-stack \
+      --namespace monitoring
+
+Check Helm release:
+
+    helm list -n monitoring
+
+
+5. CHECK PROMETHEUS POD
+-----------------------
+
+    kubectl get pods -n monitoring
+
+Find the Prometheus pod:
+
+    kubectl get pods -n monitoring | grep prometheus
+
+Check details:
+
+    kubectl describe pod <prometheus-pod-name> -n monitoring
+
+
+6. CHECK PROMETHEUS SERVICE
+---------------------------
+
+    kubectl get svc -n monitoring
+
+Find the Prometheus service:
+
+    kubectl get svc -n monitoring | grep prometheus
+
+
+7. EXPOSE PROMETHEUS USING NODEPORT
+-----------------------------------
+
+The project exposes Prometheus through NodePort 30090.
+
+First identify the Prometheus service:
+
+    kubectl get svc -n monitoring
+
+Change the service to NodePort:
+
+    kubectl patch svc monitoring-kube-prometheus-prometheus \
+      -n monitoring \
+      -p '{"spec":{"type":"NodePort"}}'
+
+Set NodePort 30090:
+
+    kubectl patch svc monitoring-kube-prometheus-prometheus \
+      -n monitoring \
+      -p '{"spec":{"ports":[{"name":"http-web","port":9090,"protocol":"TCP","targetPort":9090,"nodePort":30090}]}}'
+
+Verify:
+
+    kubectl get svc -n monitoring
+
+
+8. ACCESS PROMETHEUS
+--------------------
+
+Use the public IP of a Kubernetes node:
+
+    http://<KUBERNETES-NODE-PUBLIC-IP>:30090
+
+Example project URL:
+
+    http://44.211.48.2:30090
+
+
+9. CHECK PROMETHEUS HEALTH
+--------------------------
+
+From a machine that can reach the Prometheus service:
+
+    curl http://<KUBERNETES-NODE-PUBLIC-IP>:30090/-/healthy
+
+Expected:
+
+    Prometheus Server is Healthy.
+
+
+10. CHECK PROMETHEUS API
+-----------------------
+
+    curl "http://<KUBERNETES-NODE-PUBLIC-IP>:30090/api/v1/query?query=up"
+
+A successful response contains:
+
+    "status":"success"
+
+
+11. CHECK TARGETS
+-----------------
+
+Open:
+
+    http://<KUBERNETES-NODE-PUBLIC-IP>:30090/targets
+
+Verify that required targets show:
+
+    UP
+
+
+12. CHECK PROMETHEUS ALERTS
+---------------------------
+
+Open:
+
+    http://<KUBERNETES-NODE-PUBLIC-IP>:30090/alerts
+
+Prometheus can generate alerts for Kubernetes and infrastructure conditions.
+
+Examples used/tested in this project include:
+
+    TargetDown
+    KubeControllerManagerInstanceUnreachable
+    KubeProxyInstanceUnreachable
+    KubeSchedulerInstanceUnreachable
+    etcdMembersDown
+    etcdInsufficientMembers
+    Watchdog
+
+
+13. CHECK MONITORING COMPONENTS
+------------------------------
+
+Check kube-state-metrics:
+
+    kubectl get pods -n monitoring | grep kube-state-metrics
+
+Check Node Exporter:
+
+    kubectl get pods -n monitoring | grep node-exporter
+
+Check all monitoring resources:
+
+    kubectl get all -n monitoring
+
+
+14. CHECK SERVICEMONITORS
+-------------------------
+
+    kubectl get servicemonitor -n monitoring
+
+The project uses ServiceMonitor-based discovery for monitoring services.
+
+
+15. USE PROMQL
+--------------
+
+Open the Prometheus Query page:
+
+    http://<KUBERNETES-NODE-PUBLIC-IP>:30090/graph
+
+Example queries:
+
+    up
+
+    node_memory_MemAvailable_bytes
+
+    alertmanager_alerts
+
+    kube_pod_info
+
+    kube_node_info
+
+Execute the query and verify that metrics are returned.
+
+
+16. CHECK PROMETHEUS LOGS
+-------------------------
+
+    kubectl logs -n monitoring <prometheus-pod-name>
+
+For live logs:
+
+    kubectl logs -f -n monitoring <prometheus-pod-name>
+
+
+17. CHECK PROMETHEUS DEPLOYMENT
+------------------------------
+
+    kubectl get statefulset -n monitoring
+
+    kubectl get pods -n monitoring -o wide
+
+
+18. RESTART PROMETHEUS POD IF REQUIRED
+--------------------------------------
+
+Normally Kubernetes recreates the Pod automatically.
+
+    kubectl delete pod <prometheus-pod-name> -n monitoring
+
+Then verify:
+
+    kubectl get pods -n monitoring
+
+
+19. CHECK HELM RELEASE
+----------------------
+
+    helm status monitoring -n monitoring
+
+
+20. UNINSTALL PROMETHEUS STACK
+------------------------------
+
+Use only if the complete monitoring stack needs to be removed:
+
+    helm uninstall monitoring -n monitoring
+
+This is a destructive operation for the Helm release. Do not run it on the
+working project unless you intentionally want to remove the monitoring stack.
+
+
+21. AWS SECURITY GROUP
+---------------------
+
+If Prometheus is exposed through NodePort 30090, allow the required TCP
+port in the Kubernetes node EC2 Security Group.
+
+Required project port:
+
+    TCP 30090
+
+Prefer restricting the source IP instead of allowing 0.0.0.0/0 when possible.
+
+
+22. FINAL VERIFICATION
+----------------------
+
+Run:
+
+    kubectl get nodes
+
+    kubectl get pods -n monitoring
+
+    kubectl get svc -n monitoring
+
+    kubectl get servicemonitor -n monitoring
+
+    helm list -n monitoring
+
+Then open:
+
+    http://<KUBERNETES-NODE-PUBLIC-IP>:30090
+
+Verify:
+
+    Prometheus UI loads
+    Targets are UP
+    Queries return metrics
+    Alerts are visible
+
+
+PROJECT RESULT
+--------------
+
+Prometheus successfully collects Kubernetes and infrastructure metrics and
+provides the metrics source used by Grafana. Prometheus also evaluates alert
+rules and sends firing alerts to Alertmanager.

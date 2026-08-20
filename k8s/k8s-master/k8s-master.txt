@@ -1,0 +1,530 @@
+KUBERNETES MASTER (CONTROL PLANE) SETUP
+==========================================
+
+Purpose
+-------
+This document explains how to create and configure the Kubernetes control-plane
+node on Ubuntu. The master node is responsible for cluster management, API
+server, scheduling, controller management, and cluster state.
+
+Project architecture:
+
+    AWS EC2
+       |
+       +--> k8s-master
+       |      |
+       |      +--> containerd
+       |      +--> kubeadm
+       |      +--> kubelet
+       |      +--> kubectl
+       |      +--> Kubernetes control plane
+       |      +--> Helm
+       |      +--> Monitoring stack
+       |
+       +--> k8s-worker
+              |
+              +--> containerd
+              +--> kubeadm
+              +--> kubelet
+              +--> Application Pods
+
+
+1. SERVER REQUIREMENTS
+----------------------
+
+Recommended:
+
+    Ubuntu 24.04 LTS
+    2+ CPU
+    4 GB+ RAM
+    20 GB+ disk
+    Static/private IP or stable private addressing
+    Internet connectivity
+
+Check operating system:
+
+    cat /etc/os-release
+
+Check CPU:
+
+    nproc
+
+Check memory:
+
+    free -h
+
+Check IP:
+
+    hostname -I
+
+
+2. SET HOSTNAME
+---------------
+
+Set the master hostname:
+
+    sudo hostnamectl set-hostname k8s-master
+
+Verify:
+
+    hostname
+
+
+3. UPDATE THE SYSTEM
+---------------------
+
+    sudo apt update
+    sudo apt upgrade -y
+
+
+4. DISABLE SWAP
+---------------
+
+Kubernetes requires swap to be disabled for the standard kubeadm setup.
+
+Check swap:
+
+    swapon --show
+
+Disable immediately:
+
+    sudo swapoff -a
+
+Disable swap permanently:
+
+    sudo sed -i '/ swap / s/^/#/' /etc/fstab
+
+Verify:
+
+    free -h
+
+Swap should show 0.
+
+
+5. LOAD REQUIRED KERNEL MODULES
+-------------------------------
+
+Create the module configuration:
+
+    sudo tee /etc/modules-load.d/k8s.conf <<EOF
+    overlay
+    br_netfilter
+    EOF
+
+Load modules:
+
+    sudo modprobe overlay
+    sudo modprobe br_netfilter
+
+Verify:
+
+    lsmod | grep overlay
+    lsmod | grep br_netfilter
+
+
+6. CONFIGURE KERNEL NETWORK SETTINGS
+-------------------------------------
+
+Create Kubernetes network settings:
+
+    sudo tee /etc/sysctl.d/k8s.conf <<EOF
+    net.bridge.bridge-nf-call-iptables = 1
+    net.bridge.bridge-nf-call-ip6tables = 1
+    net.ipv4.ip_forward = 1
+    EOF
+
+Apply:
+
+    sudo sysctl --system
+
+Verify:
+
+    sysctl net.ipv4.ip_forward
+
+
+7. INSTALL CONTAINERD
+---------------------
+
+Update package lists:
+
+    sudo apt update
+
+Install containerd:
+
+    sudo apt install -y containerd
+
+Create configuration directory:
+
+    sudo mkdir -p /etc/containerd
+
+Generate default configuration:
+
+    sudo containerd config default | sudo tee /etc/containerd/config.toml
+
+Configure systemd cgroups:
+
+    sudo sed -i 's/SystemdCgroup = false/SystemdCgroup = true/' /etc/containerd/config.toml
+
+Restart containerd:
+
+    sudo systemctl restart containerd
+
+Enable at boot:
+
+    sudo systemctl enable containerd
+
+Check:
+
+    sudo systemctl status containerd
+
+Expected:
+
+    active (running)
+
+
+8. INSTALL KUBEADM, KUBELET AND KUBECTL
+---------------------------------------
+
+Install required packages:
+
+    sudo apt update
+    sudo apt install -y apt-transport-https ca-certificates curl gpg
+
+Create the Kubernetes keyring directory:
+
+    sudo mkdir -p -m 755 /etc/apt/keyrings
+
+Download the Kubernetes signing key:
+
+    curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.34/deb/Release.key \
+      | sudo gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+
+Add the Kubernetes repository:
+
+    echo 'deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.34/deb/ /' \
+      | sudo tee /etc/apt/sources.list.d/kubernetes.list
+
+Update:
+
+    sudo apt update
+
+Install:
+
+    sudo apt install -y kubelet kubeadm kubectl
+
+Hold the versions:
+
+    sudo apt-mark hold kubelet kubeadm kubectl
+
+Enable kubelet:
+
+    sudo systemctl enable kubelet
+
+Check versions:
+
+    kubeadm version
+    kubelet --version
+    kubectl version --client
+
+
+9. INITIALIZE THE KUBERNETES CONTROL PLANE
+-------------------------------------------
+
+Run kubeadm initialization.
+
+Replace the API advertise address with the master's private IP:
+
+    sudo kubeadm init \
+      --apiserver-advertise-address=<MASTER_PRIVATE_IP> \
+      --pod-network-cidr=192.168.0.0/16
+
+Example:
+
+    sudo kubeadm init \
+      --apiserver-advertise-address=172.31.10.216 \
+      --pod-network-cidr=192.168.0.0/16
+
+The initialization can take several minutes.
+
+IMPORTANT:
+The exact private IP depends on the EC2 instance. Do not blindly copy the
+example IP.
+
+
+10. CONFIGURE KUBECTL FOR THE CURRENT USER
+-------------------------------------------
+
+Create the kubeconfig directory:
+
+    mkdir -p $HOME/.kube
+
+Copy the administrator configuration:
+
+    sudo cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
+
+Change ownership:
+
+    sudo chown $(id -u):$(id -g) $HOME/.kube/config
+
+Verify:
+
+    kubectl get nodes
+
+At this stage the master may show NotReady until the Pod network is installed.
+
+
+11. INSTALL CALICO CNI
+----------------------
+
+The Kubernetes cluster needs a Container Network Interface.
+
+Apply Calico:
+
+    kubectl apply -f https://raw.githubusercontent.com/projectcalico/calico/v3.30.3/manifests/calico.yaml
+
+Check Calico Pods:
+
+    kubectl get pods -n kube-system
+
+Wait until the Calico components become Running.
+
+
+12. VERIFY KUBERNETES CONTROL PLANE
+------------------------------------
+
+Check nodes:
+
+    kubectl get nodes
+
+Check all system Pods:
+
+    kubectl get pods -n kube-system
+
+Check component resources:
+
+    kubectl get all -n kube-system
+
+
+13. CHECK KUBELET
+-----------------
+
+    sudo systemctl status kubelet
+
+Expected:
+
+    active (running)
+
+If needed:
+
+    sudo systemctl restart kubelet
+
+
+14. GENERATE WORKER JOIN COMMAND
+--------------------------------
+
+On the master, run:
+
+    kubeadm token create --print-join-command
+
+Example format:
+
+    sudo kubeadm join <MASTER_PRIVATE_IP>:6443 \
+      --token <TOKEN> \
+      --discovery-token-ca-cert-hash sha256:<HASH>
+
+Copy the complete command and execute it on the worker node.
+
+IMPORTANT:
+The token and hash are generated by the cluster. Never invent them.
+
+
+15. CHECK KUBERNETES CLUSTER
+----------------------------
+
+    kubectl cluster-info
+
+    kubectl get nodes -o wide
+
+    kubectl get pods -A
+
+
+16. INSTALL HELM
+----------------
+
+Download the Helm installation script:
+
+    curl -fsSL -o get_helm.sh https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3
+
+Make executable:
+
+    chmod 700 get_helm.sh
+
+Install:
+
+    ./get_helm.sh
+
+Verify:
+
+    helm version
+
+
+17. INSTALL MONITORING STACK
+----------------------------
+
+Add Prometheus Community repository:
+
+    helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+
+Update repositories:
+
+    helm repo update
+
+Create monitoring namespace:
+
+    kubectl create namespace monitoring
+
+Install kube-prometheus-stack:
+
+    helm install monitoring prometheus-community/kube-prometheus-stack \
+      --namespace monitoring
+
+Check:
+
+    helm list -n monitoring
+
+    kubectl get pods -n monitoring
+
+
+18. VERIFY CONTROL-PLANE COMPONENTS
+------------------------------------
+
+Check Kubernetes components:
+
+    kubectl get pods -n kube-system
+
+Important components include:
+
+    kube-apiserver
+    kube-controller-manager
+    kube-scheduler
+    etcd
+    kube-proxy
+    CoreDNS
+    Calico
+
+
+19. USEFUL MASTER COMMANDS
+--------------------------
+
+Check nodes:
+
+    kubectl get nodes
+
+Detailed nodes:
+
+    kubectl get nodes -o wide
+
+Check all Pods:
+
+    kubectl get pods -A
+
+Check namespaces:
+
+    kubectl get namespaces
+
+Check services:
+
+    kubectl get svc -A
+
+Check deployments:
+
+    kubectl get deployments -A
+
+Check events:
+
+    kubectl get events -A --sort-by=.lastTimestamp
+
+
+20. TROUBLESHOOTING
+-------------------
+
+Check kubelet:
+
+    sudo journalctl -u kubelet -xe
+
+Check containerd:
+
+    sudo journalctl -u containerd -xe
+
+Check node details:
+
+    kubectl describe node k8s-master
+
+Check system Pods:
+
+    kubectl get pods -n kube-system -o wide
+
+Check cluster information:
+
+    kubectl cluster-info
+
+
+21. AWS SECURITY GROUP REQUIREMENTS
+-----------------------------------
+
+The Kubernetes control-plane server must allow the traffic required by the
+cluster.
+
+Common control-plane ports:
+
+    TCP 6443     Kubernetes API Server
+    TCP 2379-2380 etcd
+    TCP 10250    kubelet API
+    TCP 10257    kube-controller-manager
+    TCP 10259    kube-scheduler
+
+Calico and Kubernetes networking may require additional traffic depending on
+the selected networking configuration.
+
+Do not expose the Kubernetes API publicly to the entire Internet unless there
+is a specific security requirement. Prefer restricting access to trusted
+network ranges.
+
+
+22. FINAL MASTER VERIFICATION
+-----------------------------
+
+Run:
+
+    hostname
+
+    sudo systemctl status containerd --no-pager
+
+    sudo systemctl status kubelet --no-pager
+
+    kubeadm version
+
+    kubectl version --client
+
+    helm version
+
+    kubectl get nodes -o wide
+
+    kubectl get pods -A
+
+    kubectl cluster-info
+
+Expected project state:
+
+    k8s-master     Ready     control-plane
+    k8s-worker1    Ready     <none>
+
+
+PROJECT RESULT
+--------------
+
+The Kubernetes master/control-plane node is successfully configured with
+containerd, kubeadm, kubelet, kubectl, Calico networking, and Helm.
+
+The control plane manages the Kubernetes cluster and provides the platform on
+which the worker node runs application workloads.

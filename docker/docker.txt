@@ -1,0 +1,274 @@
+DOCKER SETUP AND CONFIGURATION
+===============================
+
+Purpose
+-------
+Docker is used to build a container image for the Enterprise DevSecOps Java
+application. Jenkins builds the image and publishes it to DockerHub.
+
+Project flow:
+
+    Maven
+      |
+      v
+    enterprise-devsecops.war
+      |
+      v
+    Dockerfile
+      |
+      v
+    Docker Image
+      |
+      v
+    DockerHub
+      |
+      v
+    Kubernetes
+
+
+1. CHECK OPERATING SYSTEM
+-------------------------
+
+    cat /etc/os-release
+
+
+2. REMOVE OLD DOCKER PACKAGES IF REQUIRED
+-----------------------------------------
+
+Use this only if conflicting old Docker packages are installed:
+
+    sudo apt remove -y docker.io docker-doc docker-compose podman-docker \
+      containerd runc
+
+Do not remove containerd from Kubernetes nodes if the existing Kubernetes
+runtime depends on it. This Docker setup is intended for the DevSecOps server.
+
+
+3. INSTALL DOCKER REPOSITORY PREREQUISITES
+------------------------------------------
+
+    sudo apt update
+
+    sudo apt install -y ca-certificates curl
+
+
+4. ADD DOCKER GPG KEY
+---------------------
+
+    sudo install -m 0755 -d /etc/apt/keyrings
+
+    sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg \
+      -o /etc/apt/keyrings/docker.asc
+
+    sudo chmod a+r /etc/apt/keyrings/docker.asc
+
+
+5. ADD DOCKER APT REPOSITORY
+----------------------------
+
+    echo \
+      "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu \
+      $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | \
+      sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+
+Update:
+
+    sudo apt update
+
+
+6. INSTALL DOCKER ENGINE
+------------------------
+
+    sudo apt install -y docker-ce docker-ce-cli containerd.io \
+      docker-buildx-plugin docker-compose-plugin
+
+
+7. ENABLE DOCKER
+----------------
+
+    sudo systemctl enable docker
+
+    sudo systemctl start docker
+
+
+8. CHECK DOCKER SERVICE
+-----------------------
+
+    sudo systemctl status docker
+
+Expected:
+
+    active (running)
+
+
+9. CHECK DOCKER VERSION
+-----------------------
+
+    docker --version
+
+    docker compose version
+
+
+10. TEST DOCKER
+---------------
+
+Run the test image:
+
+    sudo docker run hello-world
+
+Check images:
+
+    sudo docker images
+
+Check containers:
+
+    sudo docker ps -a
+
+
+11. OPTIONAL: RUN APACHE CONTAINER
+----------------------------------
+
+    sudo docker run -itd --name webserver -p 1000:80 httpd
+
+Check:
+
+    sudo docker ps
+
+Access:
+
+    http://<SERVER-PUBLIC-IP>:1000
+
+
+12. DOCKER IMAGE FOR THIS PROJECT
+---------------------------------
+
+The project Dockerfile is:
+
+    FROM tomcat:10.1-jdk21
+
+    LABEL maintainer="Revanth"
+
+    RUN rm -rf /usr/local/tomcat/webapps/*
+
+    COPY target/enterprise-devsecops.war /usr/local/tomcat/webapps/ROOT.war
+
+    EXPOSE 8080
+
+    CMD ["catalina.sh", "run"]
+
+
+13. BUILD PROJECT IMAGE
+-----------------------
+
+From the project root:
+
+    docker build -t enterprise-devsecops:1.0.0 .
+
+
+14. CHECK IMAGE
+---------------
+
+    docker images
+
+Expected image:
+
+    enterprise-devsecops
+
+
+15. RUN THE APPLICATION CONTAINER
+---------------------------------
+
+    docker run -d \
+      --name enterprise-devsecops \
+      -p 8080:8080 \
+      enterprise-devsecops:1.0.0
+
+Check:
+
+    docker ps
+
+Open:
+
+    http://<SERVER-PUBLIC-IP>:8080
+
+
+16. CHECK CONTAINER LOGS
+------------------------
+
+    docker logs enterprise-devsecops
+
+Follow logs:
+
+    docker logs -f enterprise-devsecops
+
+
+17. STOP CONTAINER
+------------------
+
+    docker stop enterprise-devsecops
+
+
+18. REMOVE CONTAINER
+--------------------
+
+    docker rm enterprise-devsecops
+
+
+19. TAG IMAGE FOR DOCKERHUB
+---------------------------
+
+    docker tag enterprise-devsecops:1.0.0 \
+      revanth76/enterprise-devsecops:1.0.0
+
+
+20. LOGIN TO DOCKERHUB
+----------------------
+
+    docker login
+
+For Jenkins, credentials should be stored in Jenkins Credentials Manager
+instead of being written in the Jenkinsfile.
+
+
+21. PUSH IMAGE
+--------------
+
+    docker push revanth76/enterprise-devsecops:1.0.0
+
+
+22. DYNAMIC JENKINS TAGGING
+---------------------------
+
+The Jenkins pipeline uses:
+
+    ${BUILD_NUMBER}
+
+Example:
+
+    revanth76/enterprise-devsecops:27
+
+
+23. DOCKER CLEANUP
+------------------
+
+List images:
+
+    docker images
+
+Remove an image:
+
+    docker rmi <IMAGE_ID>
+
+Remove stopped containers:
+
+    docker container prune
+
+Use cleanup commands carefully.
+
+
+24. PROJECT RESULT
+------------------
+
+Docker successfully packages the Enterprise DevSecOps WAR application into a
+Tomcat-based container image. Jenkins builds the image, tags it with the
+build number, and pushes it to DockerHub for Kubernetes deployment.

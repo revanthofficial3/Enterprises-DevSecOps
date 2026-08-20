@@ -1,0 +1,405 @@
+TERRAFORM - KUBERNETES MASTER AND WORKER
+===========================================
+
+Purpose
+-------
+Terraform is used in this project to manage the existing AWS EC2 infrastructure
+as Infrastructure as Code (IaC).
+
+The Kubernetes infrastructure contains:
+
+    k8s-master
+    k8s-worker
+
+IMPORTANT
+---------
+In this project the EC2 instances already existed.
+
+Terraform was used to import/manage the existing instances without recreating
+or destroying them.
+
+The target Terraform result is:
+
+    No changes.
+    Your infrastructure matches the configuration.
+
+Directory:
+
+    terraform/
+    +-- main.tf
+    +-- outputs.tf
+    +-- terraform.tfstate
+    +-- terraform.tfstate.backup
+
+
+1. INSTALL TERRAFORM
+--------------------
+
+Check OS:
+
+    cat /etc/os-release
+
+Install prerequisites:
+
+    sudo apt update
+    sudo apt install -y gnupg software-properties-common curl
+
+Add HashiCorp GPG key:
+
+    wget -O- https://apt.releases.hashicorp.com/gpg | \
+      gpg --dearmor | \
+      sudo tee /usr/share/keyrings/hashicorp-archive-keyring.gpg > /dev/null
+
+Add repository:
+
+    echo "deb [signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] \
+    https://apt.releases.hashicorp.com $(lsb_release -cs) main" | \
+    sudo tee /etc/apt/sources.list.d/hashicorp.list
+
+Update:
+
+    sudo apt update
+
+Install:
+
+    sudo apt install -y terraform
+
+Verify:
+
+    terraform version
+
+
+2. CREATE PROJECT DIRECTORY
+---------------------------
+
+    mkdir -p ~/enterprise-devsecops/terraform
+
+    cd ~/enterprise-devsecops/terraform
+
+
+3. CREATE main.tf
+-----------------
+
+Create:
+
+    nano main.tf
+
+Use the project's main.tf:
+
+    terraform {
+      required_providers {
+        aws = {
+          source = "hashicorp/aws"
+        }
+      }
+    }
+
+    provider "aws" {
+      region = "us-east-1"
+    }
+
+    resource "aws_instance" "k8s_master" {
+    }
+
+    resource "aws_instance" "k8s_worker" {
+    }
+
+This configuration represents the existing EC2 instances that are imported
+into Terraform state.
+
+
+4. CREATE outputs.tf
+--------------------
+
+Create:
+
+    nano outputs.tf
+
+Use:
+
+    output "k8s_master_instance_id" {
+      description = "Kubernetes master EC2 instance ID"
+      value       = aws_instance.k8s_master.id
+    }
+
+    output "k8s_master_private_ip" {
+      description = "Kubernetes master private IP"
+      value       = aws_instance.k8s_master.private_ip
+    }
+
+    output "k8s_worker_instance_id" {
+      description = "Kubernetes worker EC2 instance ID"
+      value       = aws_instance.k8s_worker.id
+    }
+
+    output "k8s_worker_private_ip" {
+      description = "Kubernetes worker private IP"
+      value       = aws_instance.k8s_worker.private_ip
+    }
+
+
+5. INITIALIZE TERRAFORM
+-----------------------
+
+    terraform init
+
+Expected:
+
+    Terraform has been successfully initialized!
+
+
+6. VALIDATE CONFIGURATION
+-------------------------
+
+    terraform validate
+
+Expected:
+
+    Success! The configuration is valid.
+
+
+7. FORMAT FILES
+---------------
+
+    terraform fmt
+
+Check:
+
+    terraform fmt -check
+
+
+8. FIND EXISTING AWS INSTANCE IDS
+----------------------------------
+
+Use AWS CLI:
+
+    aws ec2 describe-instances \
+      --filters "Name=tag:Name,Values=k8s-master" \
+      --query 'Reservations[].Instances[].InstanceId' \
+      --output text
+
+For worker:
+
+    aws ec2 describe-instances \
+      --filters "Name=tag:Name,Values=k8s-worker" \
+      --query 'Reservations[].Instances[].InstanceId' \
+      --output text
+
+Alternatively:
+
+    aws ec2 describe-instances \
+      --query 'Reservations[].Instances[].[InstanceId,PrivateIpAddress,Tags[?Key==`Name`].Value|[0]]' \
+      --output table
+
+
+9. IMPORT KUBERNETES MASTER
+---------------------------
+
+Replace <MASTER_INSTANCE_ID> with the real EC2 instance ID.
+
+    terraform import aws_instance.k8s_master <MASTER_INSTANCE_ID>
+
+Example format:
+
+    terraform import aws_instance.k8s_master i-xxxxxxxxxxxxxxxxx
+
+
+10. IMPORT KUBERNETES WORKER
+----------------------------
+
+Replace <WORKER_INSTANCE_ID> with the real EC2 instance ID.
+
+    terraform import aws_instance.k8s_worker <WORKER_INSTANCE_ID>
+
+Example format:
+
+    terraform import aws_instance.k8s_worker i-xxxxxxxxxxxxxxxxx
+
+
+11. CHECK TERRAFORM STATE
+-------------------------
+
+    terraform state list
+
+Expected:
+
+    aws_instance.k8s_master
+    aws_instance.k8s_worker
+
+
+12. VIEW STATE DETAILS
+----------------------
+
+Master:
+
+    terraform state show aws_instance.k8s_master
+
+Worker:
+
+    terraform state show aws_instance.k8s_worker
+
+
+13. IMPORTANT - MATCH EXISTING INFRASTRUCTURE
+--------------------------------------------
+
+After importing existing EC2 instances, a normal configuration containing
+only empty aws_instance blocks may show differences because the real AWS
+attributes are not all represented in main.tf.
+
+For a strict zero-change result, the Terraform configuration must represent
+the attributes of the imported AWS instances or intentionally use lifecycle/
+data-source patterns appropriate to the project.
+
+Always run:
+
+    terraform plan
+
+before:
+
+    terraform apply
+
+Never run apply blindly on an existing environment.
+
+
+14. TERRAFORM PLAN
+------------------
+
+    terraform plan
+
+Desired project result:
+
+    No changes.
+    Your infrastructure matches the configuration.
+
+If Terraform proposes:
+
+    add
+    change
+    destroy
+
+stop and review the plan before applying.
+
+
+15. TERRAFORM APPLY
+-------------------
+
+If the plan has been reviewed and contains only the intended changes:
+
+    terraform apply
+
+Confirm:
+
+    yes
+
+For the completed project, the expected result was:
+
+    Resources: 0 added, 0 changed, 0 destroyed.
+
+
+16. TERRAFORM OUTPUTS
+---------------------
+
+    terraform output
+
+Expected values:
+
+    k8s_master_instance_id
+    k8s_master_private_ip
+    k8s_worker_instance_id
+    k8s_worker_private_ip
+
+
+17. CHECK AWS FROM CLI
+----------------------
+
+    aws ec2 describe-instances \
+      --instance-ids <MASTER_INSTANCE_ID> <WORKER_INSTANCE_ID> \
+      --query 'Reservations[].Instances[].[InstanceId,State.Name,PrivateIpAddress]' \
+      --output table
+
+
+18. TERRAFORM STATE
+-------------------
+
+The state file is:
+
+    terraform.tfstate
+
+The backup is:
+
+    terraform.tfstate.backup
+
+IMPORTANT:
+Do not upload Terraform state files to a public GitHub repository because
+state can contain infrastructure details and potentially sensitive values.
+
+
+19. RECOMMENDED .gitignore
+--------------------------
+
+Add:
+
+    terraform.tfstate
+    terraform.tfstate.*
+    .terraform/
+    *.tfvars
+    *.tfvars.json
+    crash.log
+    crash.*.log
+
+
+20. PROJECT ARCHITECTURE
+------------------------
+
+              AWS us-east-1
+                    |
+               Default VPC
+                    |
+          +---------+---------+
+          |                   |
+      k8s-master          k8s-worker
+          |                   |
+          +---------+---------+
+                    |
+                Kubernetes
+
+Terraform:
+
+    AWS EC2
+       |
+       v
+    Terraform State
+       |
+       v
+    Infrastructure as Code
+
+
+21. FINAL VERIFICATION
+----------------------
+
+    terraform version
+
+    terraform validate
+
+    terraform fmt -check
+
+    terraform state list
+
+    terraform plan
+
+    terraform output
+
+Final project state:
+
+    k8s-master  -> existing EC2 managed by Terraform
+    k8s-worker  -> existing EC2 managed by Terraform
+
+Terraform does not recreate the Kubernetes servers.
+
+
+PROJECT RESULT
+--------------
+
+Terraform successfully manages the existing Kubernetes master and worker
+infrastructure as Infrastructure as Code while preserving the existing AWS
+environment.

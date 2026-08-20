@@ -1,0 +1,181 @@
+JENKINS SERVER SETUP AND CONFIGURATION
+=======================================
+
+Purpose
+-------
+Jenkins is the CI/CD automation server for the Enterprise DevSecOps project.
+
+Flow:
+GitHub -> Jenkins -> Maven -> SonarQube -> Quality Gate -> Nexus -> Docker ->
+DockerHub -> Kubernetes
+
+1. INSTALL JAVA 21
+------------------
+    sudo apt update
+    sudo apt install -y fontconfig openjdk-21-jre
+    java -version
+
+2. INSTALL JENKINS
+------------------
+    sudo wget -O /etc/apt/keyrings/jenkins-keyring.asc https://pkg.jenkins.io/debian-stable/jenkins.io-2026.key
+
+    echo "deb [signed-by=/etc/apt/keyrings/jenkins-keyring.asc] https://pkg.jenkins.io/debian-stable binary/" | sudo tee /etc/apt/sources.list.d/jenkins.list > /dev/null
+
+    sudo apt update
+    sudo apt install -y jenkins
+
+3. START JENKINS
+----------------
+    sudo systemctl enable jenkins
+    sudo systemctl start jenkins
+    sudo systemctl status jenkins
+
+4. CHECK PORT
+-------------
+    sudo ss -lntp | grep 8080
+
+5. INITIAL ADMIN PASSWORD
+-------------------------
+    sudo cat /var/lib/jenkins/secrets/initialAdminPassword
+
+6. ACCESS JENKINS
+-----------------
+    http://<JENKINS-SERVER-PUBLIC-IP>:8080
+
+7. REQUIRED PLUGINS
+-------------------
+Install from Manage Jenkins -> Plugins:
+
+    Pipeline
+    Git
+    GitHub
+    SonarQube Scanner for Jenkins
+    Pipeline: Stage View
+    Credentials Binding
+    Config File Provider
+    Workspace Cleanup
+    Maven Integration
+
+8. CONFIGURE JDK
+----------------
+Manage Jenkins -> Tools -> JDK installations
+
+Name:
+
+    JDK21
+
+9. CONFIGURE MAVEN
+------------------
+Manage Jenkins -> Tools -> Maven installations
+
+Name:
+
+    Maven
+
+10. CONFIGURE SONARQUBE
+-----------------------
+Manage Jenkins -> System -> SonarQube servers
+
+Name:
+
+    SonarQube
+
+Server URL:
+
+    http://<SONARQUBE-SERVER-IP>:9000
+
+Configure the SonarQube token/credential securely.
+
+11. CREATE NEXUS CREDENTIAL
+---------------------------
+Manage Jenkins -> Credentials
+
+Create Username with password:
+
+    ID: nexus-creds
+
+12. CREATE DOCKERHUB CREDENTIAL
+-------------------------------
+Create Username with password:
+
+    ID: jenkins-devsecops
+
+Use DockerHub username and access token.
+
+13. CREATE MAVEN MANAGED FILE
+-----------------------------
+Manage Jenkins -> Managed Files
+
+Create:
+
+    ID: maven-settings
+
+The server ID in settings.xml must match the repository ID in pom.xml:
+
+    nexus
+
+14. CREATE PIPELINE JOB
+-----------------------
+Jenkins Dashboard -> New Item -> Pipeline
+
+Name:
+
+    enterprise-devsecops-pipeline
+
+For Pipeline from SCM:
+
+    SCM: Git
+    Repository: https://github.com/revanthofficial3/enterprise-devsecops.git
+    Branch: main
+    Script Path: Jenkinsfile
+
+15. CHECK JENKINS
+----------------
+    sudo systemctl status jenkins
+    sudo journalctl -u jenkins -xe
+    sudo journalctl -u jenkins -f
+
+16. RESTART / START / STOP
+--------------------------
+    sudo systemctl restart jenkins
+    sudo systemctl start jenkins
+    sudo systemctl stop jenkins
+
+17. IMPORTANT DIRECTORIES
+-------------------------
+    /var/lib/jenkins
+    /var/lib/jenkins/jobs/
+    /var/lib/jenkins/workspace/
+    /var/lib/jenkins/secrets/
+
+18. CHECK DISK
+-------------
+    df -h
+    docker system df
+
+19. PROJECT REQUIREMENTS
+------------------------
+Jenkins needs access to:
+
+    Java 21
+    Maven
+    Git
+    Docker
+    kubectl
+
+It must also reach:
+
+    SonarQube
+    Nexus
+    DockerHub
+    Kubernetes
+
+20. SECURITY
+------------
+Never commit passwords, tokens, AWS credentials, private keys or DockerHub
+tokens. Use Jenkins Credentials Manager and Managed Files.
+
+PROJECT RESULT
+--------------
+Jenkins is the central automation server for the Enterprise DevSecOps CI/CD
+workflow.

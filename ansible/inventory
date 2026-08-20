@@ -1,0 +1,17 @@
+[all]
+devsecops-server ansible_host=<DEVSECOPS_PRIVATE_IP>
+k8s-master ansible_host=<K8S_MASTER_PRIVATE_IP>
+k8s-worker ansible_host=<K8S_WORKER_PRIVATE_IP>
+
+[devsecops]
+devsecops-server
+
+[kubernetes_master]
+k8s-master
+
+[kubernetes_workers]
+k8s-worker
+
+[kubernetes:children]
+kubernetes_master
+kubernetes_workers

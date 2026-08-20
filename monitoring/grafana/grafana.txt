@@ -1,0 +1,320 @@
+GRAFANA SETUP AND CONFIGURATION
+================================
+
+Purpose
+-------
+Grafana is used to visualize metrics collected by Prometheus. In this project,
+Grafana runs in the monitoring namespace and uses Prometheus as its data source.
+
+
+1. CHECK PREREQUISITES
+----------------------
+
+Check Kubernetes:
+
+    kubectl get nodes
+
+Check monitoring namespace:
+
+    kubectl get namespace monitoring
+
+Check Helm:
+
+    helm version
+
+
+2. INSTALL GRAFANA
+------------------
+
+If the project uses the kube-prometheus-stack Helm release, Grafana is
+installed as part of the monitoring stack.
+
+Add the Helm repository if it has not already been added:
+
+    helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+
+Update:
+
+    helm repo update
+
+Install the monitoring stack if it is not already installed:
+
+    helm install monitoring prometheus-community/kube-prometheus-stack \
+      --namespace monitoring \
+      --create-namespace
+
+
+3. CHECK GRAFANA POD
+--------------------
+
+    kubectl get pods -n monitoring | grep grafana
+
+Check the Grafana Pod:
+
+    kubectl describe pod <grafana-pod-name> -n monitoring
+
+
+4. CHECK GRAFANA SERVICE
+------------------------
+
+    kubectl get svc -n monitoring | grep grafana
+
+
+5. EXPOSE GRAFANA USING NODEPORT
+--------------------------------
+
+The project exposes Grafana through NodePort 30300.
+
+Change the Grafana service to NodePort:
+
+    kubectl patch svc monitoring-grafana \
+      -n monitoring \
+      -p '{"spec":{"type":"NodePort"}}'
+
+Set NodePort 30300:
+
+    kubectl patch svc monitoring-grafana \
+      -n monitoring \
+      -p '{"spec":{"ports":[{"name":"http-web","port":80,"protocol":"TCP","targetPort":3000,"nodePort":30300}]}}'
+
+Verify:
+
+    kubectl get svc monitoring-grafana -n monitoring
+
+
+6. ACCESS GRAFANA
+-----------------
+
+Open:
+
+    http://<KUBERNETES-NODE-PUBLIC-IP>:30300
+
+Example project URL:
+
+    http://44.211.48.2:30300
+
+
+7. CHECK GRAFANA POD STATUS
+---------------------------
+
+    kubectl get pods -n monitoring | grep grafana
+
+Expected status:
+
+    Running
+
+The Grafana Pod in this project was observed as running and ready.
+
+
+8. CHECK GRAFANA LOGS
+---------------------
+
+    kubectl logs -n monitoring <grafana-pod-name>
+
+For live logs:
+
+    kubectl logs -f -n monitoring <grafana-pod-name>
+
+
+9. CHECK GRAFANA HEALTH
+-----------------------
+
+Port-forwarding can be used for local troubleshooting:
+
+    kubectl port-forward svc/monitoring-grafana -n monitoring 3000:80
+
+Then open:
+
+    http://localhost:3000
+
+For the project's NodePort setup, use:
+
+    http://<KUBERNETES-NODE-PUBLIC-IP>:30300
+
+
+10. PROMETHEUS DATA SOURCE
+--------------------------
+
+Grafana needs Prometheus as a data source.
+
+If Grafana was installed through kube-prometheus-stack, the Prometheus data
+source is normally provisioned by the chart.
+
+Verify from Grafana:
+
+    Connections
+        ->
+    Data Sources
+        ->
+    Prometheus
+
+The Prometheus data source should be available and healthy.
+
+
+11. PROMETHEUS SERVICE ADDRESS
+------------------------------
+
+Inside the Kubernetes cluster, Grafana communicates with Prometheus through
+the Kubernetes service DNS name.
+
+A typical service address is:
+
+    http://monitoring-kube-prometheus-prometheus.monitoring.svc:9090
+
+Use the actual service name from:
+
+    kubectl get svc -n monitoring
+
+
+12. TEST PROMETHEUS DATA SOURCE
+-------------------------------
+
+In Grafana:
+
+    Connections
+        ->
+    Data Sources
+        ->
+    Prometheus
+        ->
+    Save & Test
+
+The data source should report a successful connection.
+
+
+13. OPEN GRAFANA EXPLORE
+------------------------
+
+Use:
+
+    Explore
+
+Select:
+
+    Prometheus
+
+Example PromQL queries:
+
+    up
+
+    node_memory_MemAvailable_bytes
+
+    kube_pod_info
+
+    kube_node_info
+
+    alertmanager_alerts
+
+
+14. CREATE A DASHBOARD
+----------------------
+
+Go to:
+
+    Dashboards
+        ->
+    New
+        ->
+    New Dashboard
+
+Add a visualization.
+
+Select:
+
+    Prometheus
+
+Enter a PromQL query such as:
+
+    up
+
+Save the panel.
+
+
+15. USE KUBERNETES METRICS
+--------------------------
+
+Useful metrics for this project include:
+
+    kube_pod_info
+
+    kube_node_info
+
+    node_memory_MemAvailable_bytes
+
+    node_cpu_seconds_total
+
+    alertmanager_alerts
+
+These can be used to build Kubernetes and infrastructure dashboards.
+
+
+16. CHECK GRAFANA SERVICE
+-------------------------
+
+    kubectl get svc monitoring-grafana -n monitoring
+
+Check complete monitoring resources:
+
+    kubectl get all -n monitoring
+
+
+17. CHECK HELM RELEASE
+----------------------
+
+    helm list -n monitoring
+
+    helm status monitoring -n monitoring
+
+
+18. RESTART GRAFANA POD IF REQUIRED
+-----------------------------------
+
+    kubectl delete pod <grafana-pod-name> -n monitoring
+
+Then verify:
+
+    kubectl get pods -n monitoring | grep grafana
+
+
+19. AWS SECURITY GROUP
+----------------------
+
+If Grafana is exposed through NodePort 30300, allow the required TCP port in
+the Kubernetes node EC2 Security Group.
+
+Required project port:
+
+    TCP 30300
+
+Prefer restricting access to trusted source IPs.
+
+
+20. FINAL VERIFICATION
+----------------------
+
+Run:
+
+    kubectl get pods -n monitoring
+
+    kubectl get svc -n monitoring
+
+    helm status monitoring -n monitoring
+
+Then open:
+
+    http://<KUBERNETES-NODE-PUBLIC-IP>:30300
+
+Verify:
+
+    Grafana UI loads
+    Prometheus data source is healthy
+    PromQL queries return data
+    Dashboard panels display metrics
+
+
+PROJECT RESULT
+--------------
+
+Grafana successfully visualizes Prometheus metrics for the Kubernetes and
+infrastructure environment. The project dashboard displays metrics such as
+memory usage, Kubernetes metrics, and Alertmanager-related metrics.

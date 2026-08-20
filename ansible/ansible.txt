@@ -1,0 +1,558 @@
+ANSIBLE CONFIGURATION - ENTERPRISE DEVSECOPS
+==============================================
+
+Purpose
+-------
+Ansible is used in this project to automate common server configuration and
+verify the existing DevSecOps and Kubernetes infrastructure.
+
+Servers:
+
+    devsecops-server
+    k8s-master
+    k8s-worker
+
+The project intentionally preserves the existing Kubernetes runtime:
+
+    devsecops-server -> Docker
+    k8s-master       -> containerd
+    k8s-worker       -> containerd
+
+Ansible is used for configuration and verification. It does not reinstall or
+replace the existing Kubernetes runtime.
+
+Directory:
+
+    ansible/
+    +-- ansible.cfg
+    +-- inventory
+    +-- playbooks/
+        +-- common.yml
+        +-- docker.yml
+        +-- kubernetes.yml
+
+
+1. INSTALL ANSIBLE
+------------------
+
+On the Ansible controller/server:
+
+    sudo apt update
+
+    sudo apt install -y ansible
+
+Verify:
+
+    ansible --version
+
+Project version used:
+
+    Ansible Core 2.16.3
+    Python 3.12.3
+
+
+2. CREATE ANSIBLE DIRECTORY
+---------------------------
+
+    mkdir -p ~/enterprise-devsecops/ansible/playbooks
+
+    cd ~/enterprise-devsecops/ansible
+
+
+3. CREATE ansible.cfg
+---------------------
+
+Create:
+
+    nano ansible.cfg
+
+Use the project's configuration:
+
+    [defaults]
+    inventory = ./inventory
+    remote_user = ubuntu
+    host_key_checking = False
+    interpreter_python = auto_silent
+    timeout = 30
+
+    [privilege_escalation]
+    become = True
+    become_method = sudo
+    become_user = root
+    become_ask_pass = False
+
+Explanation:
+
+    inventory
+        Points Ansible to the inventory file.
+
+    remote_user
+        Uses the Ubuntu SSH user.
+
+    host_key_checking
+        Disabled for this lab/project environment.
+
+    become
+        Allows tasks to run with sudo/root privileges.
+
+
+4. CREATE INVENTORY
+-------------------
+
+Create:
+
+    nano inventory
+
+Use:
+
+    [all]
+    devsecops-server ansible_host=<DEVSECOPS_PRIVATE_IP>
+    k8s-master ansible_host=<K8S_MASTER_PRIVATE_IP>
+    k8s-worker ansible_host=<K8S_WORKER_PRIVATE_IP>
+
+    [devsecops]
+    devsecops-server
+
+    [kubernetes_master]
+    k8s-master
+
+    [kubernetes_workers]
+    k8s-worker
+
+    [kubernetes:children]
+    kubernetes_master
+    kubernetes_workers
+
+Replace the placeholder private IPs with the actual private IPs of your AWS
+instances.
+
+The groups are used by the playbooks:
+
+    devsecops
+    kubernetes_master
+    kubernetes_workers
+    kubernetes
+
+
+5. CONFIGURE SSH
+----------------
+
+Ansible uses SSH to connect to the managed servers.
+
+Test normal SSH first:
+
+    ssh ubuntu@<SERVER_PRIVATE_IP>
+
+If SSH key authentication is used:
+
+    ssh -i <KEY_FILE>.pem ubuntu@<SERVER_PRIVATE_IP>
+
+Do not commit the private key to GitHub.
+
+
+6. TEST ANSIBLE CONNECTIVITY
+----------------------------
+
+Run:
+
+    ansible all -m ping
+
+Expected:
+
+    devsecops-server | SUCCESS => ... "ping": "pong"
+    k8s-master       | SUCCESS => ... "ping": "pong"
+    k8s-worker        | SUCCESS => ... "ping": "pong"
+
+This verifies SSH connectivity and Python availability.
+
+
+7. CREATE COMMON PLAYBOOK
+--------------------------
+
+Create:
+
+    nano playbooks/common.yml
+
+The playbook installs common packages on all three servers.
+
+Packages:
+
+    curl
+    wget
+    git
+    unzip
+    vim
+    net-tools
+
+Run:
+
+    ansible-playbook playbooks/common.yml
+
+Expected:
+
+    failed=0
+
+
+8. COMMON PLAYBOOK EXPLANATION
+------------------------------
+
+The playbook uses:
+
+    hosts: all
+
+Therefore it runs on:
+
+    devsecops-server
+    k8s-master
+    k8s-worker
+
+It uses:
+
+    become: true
+
+so apt operations run with root privileges.
+
+The apt task:
+
+    apt:
+      update_cache: true
+
+updates the package cache.
+
+The common package task ensures the packages are installed.
+
+
+9. CREATE DOCKER PLAYBOOK
+-------------------------
+
+Create:
+
+    nano playbooks/docker.yml
+
+This project uses Docker only on:
+
+    devsecops-server
+
+The Kubernetes servers use:
+
+    containerd
+
+Therefore docker.yml is a verification playbook rather than a destructive
+Docker installation playbook.
+
+Run:
+
+    ansible-playbook playbooks/docker.yml
+
+Expected:
+
+    Docker service -> active
+    Docker version -> displayed
+
+For Kubernetes nodes:
+
+    containerd service -> active
+    containerd version -> displayed
+
+
+10. WHY DO NOT INSTALL DOCKER ON KUBERNETES SERVERS?
+-----------------------------------------------------
+
+The existing Kubernetes cluster uses containerd.
+
+Installing another container runtime can introduce package conflicts and can
+disturb an already-working Kubernetes environment.
+
+Therefore:
+
+    devsecops-server -> Docker
+    k8s-master       -> containerd
+    k8s-worker       -> containerd
+
+This project preserves the working Kubernetes runtime.
+
+
+11. CREATE KUBERNETES PLAYBOOK
+------------------------------
+
+Create:
+
+    nano playbooks/kubernetes.yml
+
+The playbook verifies:
+
+    kubelet
+    kubeadm
+    kubectl
+    Kubernetes cluster nodes
+    Kubernetes worker configuration
+
+Run:
+
+    ansible-playbook playbooks/kubernetes.yml
+
+The master uses:
+
+    /etc/kubernetes/admin.conf
+
+to query:
+
+    kubectl get nodes -o wide
+
+
+12. KUBERNETES PLAYBOOK EXPLANATION
+-----------------------------------
+
+Master tasks:
+
+    Check kubelet
+    Check kubeadm version
+    Run kubectl get nodes
+
+Worker tasks:
+
+    Check kubelet
+    Check kubeadm version
+    Check kubelet version
+
+The playbook is intentionally verification-oriented because the existing
+cluster is already configured and working.
+
+
+13. RUN ALL PLAYBOOKS
+---------------------
+
+Common configuration:
+
+    ansible-playbook playbooks/common.yml
+
+Docker/containerd verification:
+
+    ansible-playbook playbooks/docker.yml
+
+Kubernetes verification:
+
+    ansible-playbook playbooks/kubernetes.yml
+
+
+14. RUN PLAYBOOK WITH VERBOSE OUTPUT
+------------------------------------
+
+    ansible-playbook -vvv playbooks/common.yml
+
+
+15. CHECK INVENTORY
+-------------------
+
+    ansible-inventory --graph
+
+Expected structure:
+
+    @all:
+      |--devsecops-server
+      |--k8s-master
+      |--k8s-worker
+
+Check host variables:
+
+    ansible-inventory --list
+
+
+16. RUN AD-HOC COMMANDS
+-----------------------
+
+Check uptime:
+
+    ansible all -m command -a "uptime"
+
+Check hostname:
+
+    ansible all -m command -a "hostname"
+
+Check OS:
+
+    ansible all -m command -a "cat /etc/os-release"
+
+Check disk:
+
+    ansible all -m command -a "df -h"
+
+Check memory:
+
+    ansible all -m command -a "free -h"
+
+
+17. CHECK SERVICES
+------------------
+
+Docker:
+
+    ansible devsecops -m command -a "systemctl is-active docker"
+
+Containerd:
+
+    ansible kubernetes -m command -a "systemctl is-active containerd"
+
+Kubelet:
+
+    ansible kubernetes -m command -a "systemctl is-active kubelet"
+
+
+18. CHECK KUBERNETES NODES
+--------------------------
+
+    ansible-playbook playbooks/kubernetes.yml
+
+Expected cluster:
+
+    k8s-master   Ready
+    k8s-worker   Ready
+
+
+19. PROJECT SERVER ARCHITECTURE
+-------------------------------
+
+                    AWS
+                     |
+              Ansible Controller
+                     |
+        +------------+------------+
+        |            |            |
+        v            v            v
+   devsecops     k8s-master    k8s-worker
+        |            |            |
+      Docker      containerd    containerd
+        |            |            |
+     Jenkins     Kubernetes    Kubernetes
+     Maven       Control       Workload
+     SonarQube   Plane         Pods
+     Nexus
+        |
+     DockerHub
+
+
+20. ANSIBLE COMMAND SUMMARY
+---------------------------
+
+Test connectivity:
+
+    ansible all -m ping
+
+Run common configuration:
+
+    ansible-playbook playbooks/common.yml
+
+Verify Docker/containerd:
+
+    ansible-playbook playbooks/docker.yml
+
+Verify Kubernetes:
+
+    ansible-playbook playbooks/kubernetes.yml
+
+Show inventory:
+
+    ansible-inventory --graph
+
+Show all inventory data:
+
+    ansible-inventory --list
+
+
+21. TROUBLESHOOTING
+-------------------
+
+SSH connection failure:
+
+    ssh ubuntu@<PRIVATE_IP>
+
+Check:
+
+    AWS Security Group
+    Private IP
+    SSH key
+    SSH service
+    Network connectivity
+
+
+Ansible ping failure:
+
+    ansible all -m ping -vvv
+
+Check:
+
+    inventory
+    ansible.cfg
+    SSH
+    Python
+
+
+Sudo failure:
+
+Check that the Ubuntu user can use sudo:
+
+    sudo -v
+
+
+Kubernetes check failure:
+
+    sudo systemctl status kubelet
+
+On master:
+
+    kubectl get nodes
+
+Check kubeconfig:
+
+    ls -l /etc/kubernetes/admin.conf
+
+
+22. SECURITY
+------------
+
+Do not commit:
+
+    *.pem
+    SSH private keys
+    AWS credentials
+    passwords
+    Kubernetes secrets
+    tokens
+
+For production environments, use secure SSH host-key management rather than
+disabling host_key_checking.
+
+
+23. FINAL VERIFICATION
+----------------------
+
+Run:
+
+    ansible --version
+
+    ansible-inventory --graph
+
+    ansible all -m ping
+
+    ansible-playbook playbooks/common.yml
+
+    ansible-playbook playbooks/docker.yml
+
+    ansible-playbook playbooks/kubernetes.yml
+
+Expected:
+
+    SSH connectivity -> SUCCESS
+    common configuration -> failed=0
+    Docker -> active on devsecops-server
+    containerd -> active on Kubernetes servers
+    kubelet -> active
+    Kubernetes nodes -> Ready
+
+
+PROJECT RESULT
+--------------
+
+Ansible successfully automates common server configuration and verifies the
+existing DevSecOps and Kubernetes environment without disturbing the working
+Docker/containerd/Kubernetes architecture.

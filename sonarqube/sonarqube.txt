@@ -1,0 +1,414 @@
+SONARQUBE SETUP AND CONFIGURATION
+==================================
+
+Purpose
+-------
+SonarQube is used to perform static code analysis and enforce a Quality Gate
+before the application artifact and container image proceed through the CI/CD
+pipeline.
+
+Project flow:
+
+    GitHub
+       |
+       v
+    Jenkins
+       |
+       v
+    Maven Build
+       |
+       v
+    SonarQube Analysis
+       |
+       v
+    Quality Gate
+       |
+       +---- PASSED ----> Nexus / Docker / Kubernetes
+       |
+       +---- FAILED ----> Pipeline stops
+
+
+1. SERVER REQUIREMENTS
+----------------------
+
+Recommended for evaluation/project use:
+
+    Ubuntu Linux
+    Java runtime compatible with the selected SonarQube version
+    Adequate RAM and disk
+    Docker (if running SonarQube as a container)
+
+This project uses SonarQube Community Edition.
+
+
+2. INSTALL DOCKER IF REQUIRED
+-----------------------------
+
+If Docker is not already installed:
+
+    sudo apt update
+
+    sudo apt install -y docker.io
+
+Enable:
+
+    sudo systemctl enable docker
+
+    sudo systemctl start docker
+
+Verify:
+
+    docker --version
+
+
+3. RUN SONARQUBE USING DOCKER
+-----------------------------
+
+Pull the image:
+
+    sudo docker pull sonarqube:lts-community
+
+Create the container:
+
+    sudo docker run -d \
+      --name sonarqube \
+      -p 9000:9000 \
+      sonarqube:lts-community
+
+Check:
+
+    sudo docker ps
+
+Check logs:
+
+    sudo docker logs sonarqube
+
+
+4. ACCESS SONARQUBE
+-------------------
+
+Open:
+
+    http://<SONARQUBE-SERVER-PUBLIC-IP>:9000
+
+Default initial login:
+
+    Username: admin
+    Password: admin
+
+Change the default password after the first login.
+
+
+5. CHECK SONARQUBE HEALTH
+-------------------------
+
+From the SonarQube server:
+
+    curl http://localhost:9000/api/system/status
+
+A healthy instance should report a status such as:
+
+    UP
+
+
+6. CREATE A SONARQUBE PROJECT
+-----------------------------
+
+In SonarQube:
+
+    Projects
+        ->
+    Create Project
+
+Project key:
+
+    enterprise-devsecops
+
+Project display name:
+
+    Enterprise DevSecOps
+
+The project key must match the key used by the Jenkins analysis command.
+
+
+7. CREATE SONARQUBE TOKEN
+-------------------------
+
+In SonarQube:
+
+    My Account
+        ->
+    Security
+        ->
+    Generate Tokens
+
+Create a token for Jenkins.
+
+Example token name:
+
+    jenkins-enterprise-devsecops
+
+Copy the token when generated.
+
+IMPORTANT:
+The token is a secret. Do not commit it to GitHub.
+
+
+8. INSTALL SONARSCANNER MAVEN SUPPORT
+-------------------------------------
+
+The project uses the SonarQube Maven scanner plugin directly from Maven.
+
+The Jenkins pipeline runs:
+
+    mvn clean verify org.sonarsource.scanner.maven:sonar-maven-plugin:sonar \
+      -Dsonar.projectKey=enterprise-devsecops \
+      -Dsonar.projectName="Enterprise DevSecOps"
+
+
+9. JENKINS SONARQUBE SERVER CONFIGURATION
+------------------------------------------
+
+In Jenkins:
+
+    Manage Jenkins
+        ->
+    System
+        ->
+    SonarQube servers
+
+Add:
+
+    Name:
+    SonarQube
+
+    Server URL:
+    http://<SONARQUBE-SERVER-IP>:9000
+
+Configure the required authentication credential/token.
+
+
+10. JENKINS WEBHOOK
+-------------------
+
+Configure a SonarQube webhook so Jenkins can receive the Quality Gate result.
+
+In SonarQube:
+
+    Administration
+        ->
+    Configuration
+        ->
+    Webhooks
+
+Add the Jenkins webhook URL configured for the Jenkins instance.
+
+The exact URL depends on the Jenkins server address and SonarQube/Jenkins
+integration configuration.
+
+
+11. JENKINS PIPELINE INTEGRATION
+--------------------------------
+
+The project uses:
+
+    withSonarQubeEnv('SonarQube')
+
+Example:
+
+    withSonarQubeEnv('SonarQube') {
+        sh '''
+        mvn clean verify org.sonarsource.scanner.maven:sonar-maven-plugin:sonar \
+        -Dsonar.projectKey=enterprise-devsecops \
+        -Dsonar.projectName="Enterprise DevSecOps"
+        '''
+    }
+
+
+12. QUALITY GATE
+----------------
+
+The pipeline waits for the SonarQube Quality Gate:
+
+    timeout(time: 5, unit: 'MINUTES') {
+        waitForQualityGate abortPipeline: true
+    }
+
+Meaning:
+
+    Quality Gate PASSED
+        ->
+    Pipeline continues
+
+    Quality Gate FAILED
+        ->
+    Pipeline stops
+
+
+13. RUN ANALYSIS MANUALLY
+-------------------------
+
+From the project root:
+
+    mvn clean verify \
+      org.sonarsource.scanner.maven:sonar-maven-plugin:sonar \
+      -Dsonar.projectKey=enterprise-devsecops \
+      -Dsonar.projectName="Enterprise DevSecOps" \
+      -Dsonar.host.url=http://<SONARQUBE-SERVER-IP>:9000
+
+
+14. AUTHENTICATION FOR MANUAL ANALYSIS
+--------------------------------------
+
+If authentication is required, provide the Sonar token securely through the
+environment or Maven configuration.
+
+Do not place the real token directly in source code.
+
+Example environment variable:
+
+    export SONAR_TOKEN="<YOUR_TOKEN>"
+
+Then use the supported Sonar scanner authentication option.
+
+
+15. CHECK SONARQUBE PROJECT
+---------------------------
+
+Open:
+
+    http://<SONARQUBE-SERVER-IP>:9000
+
+Select:
+
+    Projects
+        ->
+    Enterprise DevSecOps
+
+
+16. CHECK ANALYSIS RESULTS
+--------------------------
+
+Review:
+
+    Bugs
+    Vulnerabilities
+    Security Hotspots
+    Code Smells
+    Coverage
+    Duplications
+    Quality Gate
+
+
+17. PROJECT QUALITY RESULT
+--------------------------
+
+The project Quality Gate was successfully passed.
+
+The captured project result shows:
+
+    Quality Gate: PASSED
+
+The analysis also reports the project's code-quality and security metrics.
+
+
+18. SONARQUBE LOGS
+------------------
+
+If SonarQube is running in Docker:
+
+    sudo docker logs sonarqube
+
+Follow:
+
+    sudo docker logs -f sonarqube
+
+
+19. CHECK SONARQUBE CONTAINER
+-----------------------------
+
+    sudo docker ps | grep sonarqube
+
+Inspect:
+
+    sudo docker inspect sonarqube
+
+
+20. RESTART SONARQUBE
+---------------------
+
+    sudo docker restart sonarqube
+
+Check:
+
+    sudo docker ps
+
+
+21. STOP SONARQUBE
+------------------
+
+    sudo docker stop sonarqube
+
+
+22. START SONARQUBE
+-------------------
+
+    sudo docker start sonarqube
+
+
+23. SONARQUBE TROUBLESHOOTING
+-----------------------------
+
+Check container:
+
+    sudo docker ps -a
+
+Check logs:
+
+    sudo docker logs sonarqube
+
+Check port:
+
+    sudo ss -lntp | grep 9000
+
+Check local access:
+
+    curl http://localhost:9000/api/system/status
+
+Check Jenkins connectivity:
+
+    curl http://<SONARQUBE-SERVER-IP>:9000/api/system/status
+
+
+24. AWS SECURITY GROUP
+----------------------
+
+If SonarQube is accessed remotely, allow:
+
+    TCP 9000
+
+Prefer restricting the source to trusted IP addresses rather than exposing
+SonarQube to the entire Internet.
+
+
+25. SECURITY
+------------
+
+Never commit:
+
+    SonarQube token
+    Jenkins credentials
+    passwords
+    private keys
+    .env files
+
+Use Jenkins Credentials Manager for CI/CD secrets.
+
+
+26. PROJECT RESULT
+------------------
+
+SonarQube is integrated into the Jenkins CI/CD pipeline. Source code is
+analyzed before artifact publication and container deployment. The Quality
+Gate controls whether the pipeline can continue to Nexus, Docker, and
+Kubernetes stages.

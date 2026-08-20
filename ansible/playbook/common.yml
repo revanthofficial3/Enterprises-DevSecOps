@@ -1,0 +1,23 @@
+---
+- name: Configure all DevSecOps servers
+  hosts: all
+  become: true
+  gather_facts: true
+
+  tasks:
+
+    - name: Update apt cache
+      apt:
+        update_cache: true
+        cache_valid_time: 3600
+
+    - name: Install common packages
+      apt:
+        name:
+          - curl
+          - wget
+          - git
+          - unzip
+          - vim
+          - net-tools
+        state: present

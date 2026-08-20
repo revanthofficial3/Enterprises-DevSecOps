@@ -1,0 +1,211 @@
+HELM SETUP AND CONFIGURATION
+=============================
+
+Purpose
+-------
+Helm is the package manager for Kubernetes. It is used in this project to
+install and manage Kubernetes applications such as the Prometheus/Grafana/
+Alertmanager monitoring stack.
+
+1. CHECK KUBERNETES
+-------------------
+
+    kubectl get nodes
+
+    kubectl version --client
+
+
+2. INSTALL HELM
+---------------
+
+Download the official Helm installation script:
+
+    curl -fsSL -o get_helm.sh https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3
+
+Make it executable:
+
+    chmod 700 get_helm.sh
+
+Run the installer:
+
+    ./get_helm.sh
+
+Verify:
+
+    helm version
+
+
+3. CHECK HELM REPOSITORIES
+--------------------------
+
+List repositories:
+
+    helm repo list
+
+Add Prometheus Community repository:
+
+    helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+
+Update repositories:
+
+    helm repo update
+
+
+4. SEARCH HELM CHARTS
+---------------------
+
+Search the Prometheus Community repository:
+
+    helm search repo prometheus-community
+
+Search specifically for kube-prometheus-stack:
+
+    helm search repo prometheus-community/kube-prometheus-stack
+
+
+5. CREATE MONITORING NAMESPACE
+------------------------------
+
+    kubectl create namespace monitoring
+
+Verify:
+
+    kubectl get namespaces
+
+
+6. INSTALL KUBE-PROMETHEUS-STACK
+--------------------------------
+
+    helm install monitoring prometheus-community/kube-prometheus-stack \
+      --namespace monitoring
+
+Check release:
+
+    helm list -n monitoring
+
+
+7. CHECK INSTALLED RESOURCES
+----------------------------
+
+    kubectl get pods -n monitoring
+
+    kubectl get svc -n monitoring
+
+    kubectl get deployments -n monitoring
+
+    kubectl get statefulsets -n monitoring
+
+
+8. CHECK HELM RELEASE STATUS
+----------------------------
+
+    helm status monitoring -n monitoring
+
+
+9. VIEW HELM VALUES
+-------------------
+
+View default chart values:
+
+    helm show values prometheus-community/kube-prometheus-stack
+
+View the values used by an installed release:
+
+    helm get values monitoring -n monitoring
+
+
+10. UPGRADE A HELM RELEASE
+--------------------------
+
+Update repository:
+
+    helm repo update
+
+Upgrade:
+
+    helm upgrade monitoring prometheus-community/kube-prometheus-stack \
+      --namespace monitoring
+
+Verify:
+
+    helm status monitoring -n monitoring
+
+
+11. LIST HELM RELEASES
+----------------------
+
+    helm list -A
+
+
+12. ROLLBACK A HELM RELEASE
+---------------------------
+
+View release history:
+
+    helm history monitoring -n monitoring
+
+Rollback to a previous revision:
+
+    helm rollback monitoring <REVISION> -n monitoring
+
+Verify:
+
+    helm status monitoring -n monitoring
+
+
+13. UNINSTALL A HELM RELEASE
+----------------------------
+
+Use only when intentionally removing the release:
+
+    helm uninstall monitoring -n monitoring
+
+Verify:
+
+    helm list -n monitoring
+
+
+14. HELM TROUBLESHOOTING
+------------------------
+
+Check release:
+
+    helm status monitoring -n monitoring
+
+Check history:
+
+    helm history monitoring -n monitoring
+
+Check Kubernetes events:
+
+    kubectl get events -n monitoring --sort-by=.lastTimestamp
+
+Check Pods:
+
+    kubectl get pods -n monitoring -o wide
+
+
+15. PROJECT HELM USAGE
+----------------------
+
+In this project Helm is used to install and manage the Kubernetes monitoring
+stack.
+
+Main stack:
+
+    kube-prometheus-stack
+
+Monitoring components include:
+
+    Prometheus
+    Grafana
+    Alertmanager
+    kube-state-metrics
+    Node Exporter
+
+
+PROJECT RESULT
+--------------
+
+Helm is installed on the Kubernetes control-plane environment and is used to
+deploy and manage the monitoring stack consistently through Kubernetes.
